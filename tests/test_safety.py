@@ -1,10 +1,11 @@
 import pytest
+import typer
 
+from nexaegis.cli.commands.run import run_checked_command
 from nexaegis.core.config import default_config, write_default_config
 from nexaegis.core.context import get_project_context
 from nexaegis.core.policies import CommandRule, PolicyError, load_command_rules, load_custom_policy_file
 from nexaegis.core.safety import evaluate_command
-from nexaegis.cli.commands.run import run_checked_command
 
 
 def test_blocks_recursive_delete_in_safe_mode() -> None:
@@ -102,7 +103,7 @@ def test_block_policy_cannot_be_overridden_with_execute_yes(tmp_path) -> None:
     )
     context = get_project_context(tmp_path)
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(typer.Exit):
         run_checked_command(
             context,
             "python -c \"open('marker.txt', 'w').write('ran')\"",
