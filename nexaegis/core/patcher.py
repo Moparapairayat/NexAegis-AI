@@ -71,14 +71,23 @@ class SafePatcher:
         if not plans:
             raise ValueError("No patch plans were provided.")
 
+        resolved_targets = [self.resolve_target(plan.target_path) for plan in plans]
+        duplicate_targets = {
+            target.relative_to(self.project_root).as_posix()
+            for target in resolved_targets
+            if resolved_targets.count(target) > 1
+        }
+        if duplicate_targets:
+            duplicates = ", ".join(sorted(duplicate_targets))
+            raise ValueError(f"Patch batch contains duplicate target(s): {duplicates}")
+
         backup_dir = self._new_backup_dir(backup_root)
         results: list[PatchApplyResult] = []
         changes: list[dict[str, Any]] = []
 
         metadata_path = backup_dir / "rollback.json"
 
-        for plan in plans:
-            target = self.resolve_target(plan.target_path)
+        for plan, target in zip(plans, resolved_targets, strict=True):
             created = not target.exists()
             backup_path: Path | None = None
 
@@ -170,10 +179,15 @@ class SafePatcher:
 
     @staticmethod
     def _new_backup_dir(backup_root: Path) -> Path:
-        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-        backup_dir = backup_root / timestamp
-        backup_dir.mkdir(parents=True, exist_ok=False)
-        return backup_dir
+        for _ in range(10):
+            timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+            backup_dir = backup_root / timestamp
+            try:
+                backup_dir.mkdir(parents=True, exist_ok=False)
+            except FileExistsError:
+                continue
+            return backup_dir
+        raise FileExistsError(f"Could not create a unique backup directory under {backup_root}")
 
     def _backup_current_before_rollback(self, target: Path, current_backup_dir: Path) -> None:
         relative = target.relative_to(self.project_root)

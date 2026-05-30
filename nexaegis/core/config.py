@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 STATE_DIR = ".nexaegis"
 CONFIG_FILE = "config.yaml"
@@ -31,17 +31,19 @@ class NexAegisConfig(BaseModel):
     safe_mode: bool = True
     ai_provider: str = "rule_based"
     ollama_model: str = "qwen2.5-coder:1.5b"
-    policy_packs: list[str] = ["baseline"]
-    custom_policy_paths: list[str] = []
+    policy_packs: list[str] = Field(default_factory=lambda: ["baseline"])
+    custom_policy_paths: list[str] = Field(default_factory=list)
     risk_threshold: str = "medium"
     allow_apply_patch: bool = True
     allow_command_execution: bool = False
     run_validation_after_fix: bool = False
-    fix_validation_commands: list[str] = ["uv run ruff check .", "uv run pytest"]
+    fix_validation_commands: list[str] = Field(
+        default_factory=lambda: ["uv run ruff check .", "uv run pytest"]
+    )
     ci_min_health_score: int = 70
     ci_min_security_score: int = 80
     ci_max_risk_level: str = "medium"
-    risk_weights: RiskWeights = RiskWeights()
+    risk_weights: RiskWeights = Field(default_factory=RiskWeights)
 
 
 class ConfigError(RuntimeError):

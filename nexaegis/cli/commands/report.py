@@ -25,7 +25,11 @@ def report_command(
     """Generate a local project report in Markdown, JSON, or SARIF."""
     context = get_project_context()
     report = build_project_report(context.root, context.config)
-    text = render_report(report, report_format)
+    try:
+        text = render_report(report, report_format)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
 
     context.store.record_scan_run(context.root, report.doctor.score, report.doctor.to_dict())
     context.store.record_risk_run(
