@@ -6,6 +6,7 @@ import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from nexaegis.core.paths import IGNORED_DIRS, iter_project_files
 from nexaegis.core.scoring import clamp_score
 
 
@@ -192,8 +193,8 @@ def _builtin_findings(root: Path) -> list[SecurityFinding]:
             )
         )
 
-    for path in root.rglob("*"):
-        if not path.is_file() or _is_ignored_path(path, root):
+    for path in iter_project_files(root):
+        if _is_ignored_path(path, root):
             continue
         relative = path.relative_to(root).as_posix()
         lowered = path.name.lower()
@@ -330,27 +331,18 @@ def _read_lower(path: Path) -> str:
 def _is_git_tracked(root: Path, relative_path: str) -> bool:
     if not (root / ".git").exists():
         return False
-    result = subprocess.run(
-        ["git", "-C", str(root), "ls-files", "--error-unmatch", relative_path],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "--error-unmatch", relative_path],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    except OSError:
+        return False
     return result.returncode == 0
 
 
 def _is_ignored_path(path: Path, root: Path) -> bool:
     parts = set(path.relative_to(root).parts)
-    return bool(
-        parts
-        & {
-            ".git",
-            ".nexaegis",
-            ".pytest_cache",
-            ".ruff_cache",
-            ".venv",
-            "venv",
-            "__pycache__",
-            "node_modules",
-        }
-    )
+    return bool(parts & IGNORED_DIRS)

@@ -13,6 +13,7 @@ from nexaegis.ai.prompts import ASK_SYSTEM_PROMPT
 from nexaegis.ai.provider import get_provider
 from nexaegis.ai.rule_based import answer_project_question
 from nexaegis.core.context import get_project_context
+from nexaegis.core.paths import iter_project_paths
 from nexaegis.scanners.git import status_summary
 
 console = Console()
@@ -69,21 +70,9 @@ def build_compact_context(root: Path) -> str:
 
 
 def _tree_summary(root: Path, limit: int = 80) -> str:
-    ignored = {
-        ".git",
-        ".nexaegis",
-        ".pytest_cache",
-        ".ruff_cache",
-        ".venv",
-        "venv",
-        "__pycache__",
-        "node_modules",
-    }
     lines: list[str] = []
-    for path in sorted(root.rglob("*")):
+    for path in iter_project_paths(root):
         relative_parts = path.relative_to(root).parts
-        if set(relative_parts) & ignored:
-            continue
         if len(lines) >= limit:
             lines.append("...")
             break
