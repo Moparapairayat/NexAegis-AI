@@ -37,7 +37,7 @@ def ci_command(
         typer.Option("--output", "-o", help="Write CI report to this path."),
     ] = None,
 ) -> None:
-    """Run non-interactive CI gates for health, risk, and security."""
+    """Run non-interactive CI gates for health, risk, security, and reports."""
     context = get_project_context()
     health_gate = min_health if min_health is not None else context.config.ci_min_health_score
     security_gate = (

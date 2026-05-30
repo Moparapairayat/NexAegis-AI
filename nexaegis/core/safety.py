@@ -32,7 +32,7 @@ def evaluate_command(
             category="empty",
         )
 
-    active_rules = rules or default_command_rules()
+    active_rules = default_command_rules() if rules is None else rules
     matches = [rule for rule in active_rules if rule.pattern.search(normalized)]
     if matches:
         block = next((rule for rule in matches if rule.action == "block"), None)

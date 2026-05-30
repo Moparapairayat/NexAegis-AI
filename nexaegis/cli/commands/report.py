@@ -22,7 +22,7 @@ def report_command(
         typer.Option("--output", "-o", help="Write report to this path instead of stdout."),
     ] = None,
 ) -> None:
-    """Generate a local project report in Markdown or JSON."""
+    """Generate a local project report in Markdown, JSON, or SARIF."""
     context = get_project_context()
     report = build_project_report(context.root, context.config)
     text = render_report(report, report_format)
