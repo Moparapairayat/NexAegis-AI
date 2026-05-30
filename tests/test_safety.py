@@ -4,7 +4,12 @@ import typer
 from nexaegis.cli.commands.run import run_checked_command
 from nexaegis.core.config import default_config, write_default_config
 from nexaegis.core.context import get_project_context
-from nexaegis.core.policies import CommandRule, PolicyError, load_command_rules, load_custom_policy_file
+from nexaegis.core.policies import (
+    CommandRule,
+    PolicyError,
+    load_command_rules,
+    load_custom_policy_file,
+)
 from nexaegis.core.safety import evaluate_command
 
 
