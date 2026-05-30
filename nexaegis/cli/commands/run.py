@@ -10,8 +10,8 @@ from rich.panel import Panel
 from rich.prompt import Confirm
 
 from nexaegis.core.context import ProjectContext, get_project_context
-from nexaegis.core.policies import load_command_rules
-from nexaegis.core.safety import evaluate_command
+from nexaegis.core.policies import PolicyError, load_command_rules
+from nexaegis.core.safety import SafetyResult, evaluate_command
 
 console = Console()
 
@@ -65,33 +65,41 @@ def run_checked_command(
     dry_run: bool = False,
     timeout: int = 120,
 ) -> int | None:
-    rules = load_command_rules(context.config, context.root)
-    safety = evaluate_command(command, safe_mode=context.config.safe_mode, rules=rules)
-    color = "red" if safety.requires_confirmation else "green"
-    console.print(
-        Panel.fit(
-            "\n".join(
-                [
-                    f"Command: {command}",
-                    f"Category: {safety.category}",
-                    f"Risk score: {safety.risk_score}/100",
-                    f"Matched rules: {', '.join(safety.matched_rules) or 'none'}",
-                    f"Allowed by policy: {safety.allowed}",
-                    f"Requires confirmation: {safety.requires_confirmation}",
-                    f"Reason: {safety.reason}",
-                    f"Safer alternative: {safety.safer_alternative or 'n/a'}",
-                ]
-            ),
-            title="NexAegis Command Firewall",
-            border_style=color,
+    try:
+        rules = load_command_rules(context.config, context.root)
+    except PolicyError as exc:
+        safety = SafetyResult(
+            allowed=False,
+            requires_confirmation=False,
+            reason=f"Policy configuration error: {exc}",
+            safer_alternative="Fix the policy configuration before running commands.",
+            category="policy",
+            risk_score=100,
+            matched_rules=("policy_error",),
         )
-    )
+        _print_safety_panel(command, safety)
+        record = asdict(safety) | {
+            "dry_run": dry_run,
+            "execute_requested": execute,
+            "status": "blocked_by_policy_error",
+        }
+        context.store.record_command(command, record)
+        raise typer.Exit(code=2)
+
+    safety = evaluate_command(command, safe_mode=context.config.safe_mode, rules=rules)
+    _print_safety_panel(command, safety)
 
     record = asdict(safety) | {"dry_run": dry_run, "execute_requested": execute}
     if dry_run:
         record["status"] = "dry_run"
         context.store.record_command(command, record)
         return None
+
+    if not safety.allowed and not safety.requires_confirmation:
+        record["status"] = "blocked_by_policy"
+        context.store.record_command(command, record)
+        console.print("[red]Command blocked by policy and cannot be overridden.[/red]")
+        raise typer.Exit(code=1)
 
     if not context.config.allow_command_execution and not execute:
         record["status"] = "blocked_by_config"
@@ -150,3 +158,25 @@ def run_checked_command(
     if result.returncode != 0:
         raise typer.Exit(code=result.returncode)
     return result.returncode
+
+
+def _print_safety_panel(command: str, safety: SafetyResult) -> None:
+    color = "red" if safety.requires_confirmation or not safety.allowed else "green"
+    console.print(
+        Panel.fit(
+            "\n".join(
+                [
+                    f"Command: {command}",
+                    f"Category: {safety.category}",
+                    f"Risk score: {safety.risk_score}/100",
+                    f"Matched rules: {', '.join(safety.matched_rules) or 'none'}",
+                    f"Allowed by policy: {safety.allowed}",
+                    f"Requires confirmation: {safety.requires_confirmation}",
+                    f"Reason: {safety.reason}",
+                    f"Safer alternative: {safety.safer_alternative or 'n/a'}",
+                ]
+            ),
+            title="NexAegis Command Firewall",
+            border_style=color,
+        )
+    )

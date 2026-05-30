@@ -15,7 +15,7 @@ from rich.text import Text
 from nexaegis.core.config import backups_dir
 from nexaegis.core.context import ProjectContext, get_project_context
 from nexaegis.core.patcher import PatchPlan, SafePatcher
-from nexaegis.core.policies import load_command_rules
+from nexaegis.core.policies import PolicyError, load_command_rules
 from nexaegis.core.safety import evaluate_command
 from nexaegis.scanners.project import scan_project
 
@@ -332,7 +332,18 @@ def _run_validation_commands(context: ProjectContext) -> bool:
         console.print("[yellow]No validation commands are configured.[/yellow]")
         return True
 
-    rules = load_command_rules(context.config, context.root)
+    try:
+        rules = load_command_rules(context.config, context.root)
+    except PolicyError as exc:
+        console.print(f"[red]Validation blocked by policy configuration error:[/red] {exc}")
+        context.store.record_command(
+            "validation",
+            {
+                "status": "validation_blocked_by_policy_error",
+                "reason": str(exc),
+            },
+        )
+        return False
     for command in commands:
         safety = evaluate_command(command, safe_mode=context.config.safe_mode, rules=rules)
         record = asdict(safety) | {"status": "validation_pending"}
