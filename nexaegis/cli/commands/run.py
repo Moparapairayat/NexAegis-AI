@@ -84,7 +84,7 @@ def run_checked_command(
             "status": "blocked_by_policy_error",
         }
         context.store.record_command(command, record)
-        raise typer.Exit(code=2)
+        raise typer.Exit(code=2) from exc
 
     safety = evaluate_command(command, safe_mode=context.config.safe_mode, rules=rules)
     _print_safety_panel(command, safety)

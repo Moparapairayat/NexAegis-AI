@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from nexaegis.core.patcher import PatchPlan, SafePatcher
 
 
@@ -56,3 +58,37 @@ def test_rollback_restores_modified_file_and_deletes_created_file(tmp_path: Path
     assert tmp_path / ".env.example" in result.deleted_files
     assert result.current_backup_dir is not None
     assert (result.current_backup_dir / "README.md").exists()
+
+
+def test_apply_many_rejects_duplicate_targets_before_writing(tmp_path: Path) -> None:
+    target = tmp_path / "README.md"
+    target.write_text("old\n", encoding="utf-8")
+    patcher = SafePatcher(tmp_path)
+
+    with pytest.raises(ValueError, match="duplicate target"):
+        patcher.apply_many(
+            [
+                PatchPlan(target_path=Path("README.md"), new_content="one\n", description="one"),
+                PatchPlan(target_path=Path("README.md"), new_content="two\n", description="two"),
+            ],
+            tmp_path / ".nexaegis" / "backups",
+        )
+
+    assert target.read_text(encoding="utf-8") == "old\n"
+
+
+def test_apply_many_preflights_all_targets_before_writing(tmp_path: Path) -> None:
+    target = tmp_path / "README.md"
+    target.write_text("old\n", encoding="utf-8")
+    patcher = SafePatcher(tmp_path)
+
+    with pytest.raises(ValueError, match="outside project root"):
+        patcher.apply_many(
+            [
+                PatchPlan(target_path=Path("README.md"), new_content="new\n", description="safe"),
+                PatchPlan(target_path=Path("..") / "escape.txt", new_content="bad\n", description="bad"),
+            ],
+            tmp_path / ".nexaegis" / "backups",
+        )
+
+    assert target.read_text(encoding="utf-8") == "old\n"

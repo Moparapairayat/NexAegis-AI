@@ -1,5 +1,10 @@
-from nexaegis.core.policies import CommandRule, load_custom_policy_file
+import pytest
+
+from nexaegis.core.config import default_config, write_default_config
+from nexaegis.core.context import get_project_context
+from nexaegis.core.policies import CommandRule, PolicyError, load_command_rules, load_custom_policy_file
 from nexaegis.core.safety import evaluate_command
+from nexaegis.cli.commands.run import run_checked_command
 
 
 def test_blocks_recursive_delete_in_safe_mode() -> None:
@@ -55,3 +60,54 @@ def test_custom_policy_can_block_command(tmp_path) -> None:
     assert result.allowed is False
     assert result.requires_confirmation is False
     assert result.category == "secrets"
+
+
+def test_unknown_policy_pack_fails_closed(tmp_path) -> None:
+    config = default_config(tmp_path)
+    config.policy_packs = ["missing-pack"]
+
+    with pytest.raises(PolicyError):
+        load_command_rules(config, tmp_path)
+
+
+def test_detects_windows_recursive_delete() -> None:
+    result = evaluate_command("Remove-Item build -Recurse -Force", safe_mode=True)
+
+    assert result.allowed is False
+    assert result.requires_confirmation is True
+    assert result.category == "filesystem"
+
+
+def test_block_policy_cannot_be_overridden_with_execute_yes(tmp_path) -> None:
+    write_default_config(tmp_path)
+    policy = tmp_path / ".nexaegis" / "policy.yaml"
+    policy.write_text(
+        "\n".join(
+            [
+                "command_rules:",
+                "  - name: block_python",
+                "    pattern: '^python'",
+                "    reason: 'Python execution is blocked for this test.'",
+                "    action: block",
+                "    category: test",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    config_file = tmp_path / ".nexaegis" / "config.yaml"
+    config_file.write_text(
+        config_file.read_text(encoding="utf-8")
+        + "\nallow_command_execution: true\ncustom_policy_paths:\n  - .nexaegis/policy.yaml\n",
+        encoding="utf-8",
+    )
+    context = get_project_context(tmp_path)
+
+    with pytest.raises(SystemExit):
+        run_checked_command(
+            context,
+            "python -c \"open('marker.txt', 'w').write('ran')\"",
+            execute=True,
+            yes=True,
+        )
+
+    assert not (tmp_path / "marker.txt").exists()
