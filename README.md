@@ -15,7 +15,10 @@ NexAegis AI is a local-first, risk-aware AI DevOps terminal. It understands a pr
 - Backup-first patching: applied patches create rollback metadata under `.nexaegis/backups/`.
 - Risk-aware workflow: `nax risk` highlights sensitive files, missing tests, CI gaps, dependency changes, and release hazards.
 - Command firewall: `nax run` checks commands before execution and records command history.
+- AI safety shell: `nax shell` routes interactive commands through the same policy gate.
+- Policy packs: command firewall rules can be loaded from built-in or custom YAML packs.
 - Automation-ready reports: `nax report` and `nax ci` support local CI gates.
+- SARIF export: `nax report --format sarif` can feed code-scanning workflows.
 
 ## Install
 
@@ -55,6 +58,7 @@ nax report --format markdown --output .nexaegis/report.md
 | `nax explain` | Explain common errors without executing commands. |
 | `nax ask` | Answer project questions from compact local context. |
 | `nax run` | Risk-check and optionally run a command through the command firewall. |
+| `nax shell` | Open an interactive safety shell where commands are inspected before execution. |
 | `nax fix --dry-run` | Show supported safe patch previews. |
 | `nax fix list` | List currently available safe fix IDs. |
 | `nax fix preview <id>` | Preview a single safe fix. |
@@ -78,9 +82,16 @@ project_name: your-folder
 safe_mode: true
 ai_provider: rule_based
 ollama_model: qwen2.5-coder:1.5b
+policy_packs:
+  - baseline
+custom_policy_paths: []
 risk_threshold: medium
 allow_apply_patch: true
 allow_command_execution: false
+run_validation_after_fix: false
+fix_validation_commands:
+  - uv run ruff check .
+  - uv run pytest
 ci_min_health_score: 70
 ci_min_security_score: 80
 ci_max_risk_level: medium
@@ -122,6 +133,22 @@ No paid API is required.
 Missing optional tools do not fail the command.
 
 Built-in checks also flag common Dockerfile, Terraform, and Kubernetes risks such as `latest` image tags, privileged containers, public Terraform exposure, and broad ingress CIDRs.
+
+## Policy Packs
+
+The command firewall uses policy packs. The default `baseline` pack keeps destructive commands behind confirmation gates. Add custom YAML files through `custom_policy_paths`:
+
+```yaml
+command_rules:
+  - name: block_secret_echo
+    pattern: "^echo secret"
+    reason: "Do not print secret-like values."
+    action: block
+    category: secrets
+    risk_score: 80
+```
+
+Supported actions are `allow`, `confirm`, and `block`.
 
 ## Development
 

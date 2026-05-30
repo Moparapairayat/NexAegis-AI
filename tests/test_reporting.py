@@ -1,7 +1,12 @@
 from pathlib import Path
 
 from nexaegis.core.config import default_config
-from nexaegis.core.reporting import build_project_report, report_to_json, report_to_markdown
+from nexaegis.core.reporting import (
+    build_project_report,
+    report_to_json,
+    report_to_markdown,
+    report_to_sarif,
+)
 
 
 def test_report_renders_json_and_markdown(tmp_path: Path) -> None:
@@ -14,3 +19,4 @@ def test_report_renders_json_and_markdown(tmp_path: Path) -> None:
 
     assert '"doctor"' in report_to_json(report)
     assert "# NexAegis AI Report" in report_to_markdown(report)
+    assert '"version": "2.1.0"' in report_to_sarif(report)
