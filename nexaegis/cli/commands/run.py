@@ -9,7 +9,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm
 
-from nexaegis.core.context import get_project_context
+from nexaegis.core.context import ProjectContext, get_project_context
+from nexaegis.core.policies import load_command_rules
 from nexaegis.core.safety import evaluate_command
 
 console = Console()
@@ -43,13 +44,38 @@ def run_command(
 ) -> None:
     """Risk-check a command before execution."""
     context = get_project_context()
-    safety = evaluate_command(command, safe_mode=context.config.safe_mode)
+    run_checked_command(
+        context,
+        command,
+        execute=execute,
+        yes=yes,
+        confirm_danger=confirm_danger,
+        dry_run=dry_run,
+        timeout=timeout,
+    )
+
+
+def run_checked_command(
+    context: ProjectContext,
+    command: str,
+    *,
+    execute: bool = False,
+    yes: bool = False,
+    confirm_danger: bool = False,
+    dry_run: bool = False,
+    timeout: int = 120,
+) -> int | None:
+    rules = load_command_rules(context.config, context.root)
+    safety = evaluate_command(command, safe_mode=context.config.safe_mode, rules=rules)
     color = "red" if safety.requires_confirmation else "green"
     console.print(
         Panel.fit(
             "\n".join(
                 [
                     f"Command: {command}",
+                    f"Category: {safety.category}",
+                    f"Risk score: {safety.risk_score}/100",
+                    f"Matched rules: {', '.join(safety.matched_rules) or 'none'}",
                     f"Allowed by policy: {safety.allowed}",
                     f"Requires confirmation: {safety.requires_confirmation}",
                     f"Reason: {safety.reason}",
@@ -65,7 +91,7 @@ def run_command(
     if dry_run:
         record["status"] = "dry_run"
         context.store.record_command(command, record)
-        return
+        return None
 
     if not context.config.allow_command_execution and not execute:
         record["status"] = "blocked_by_config"
@@ -74,7 +100,7 @@ def run_command(
             "[yellow]Command execution is disabled by config. Re-run with --execute for this "
             "explicit command after review.[/yellow]"
         )
-        return
+        return None
 
     if safety.requires_confirmation:
         if not confirm_danger and context.config.safe_mode:
@@ -84,7 +110,7 @@ def run_command(
                 record["status"] = "danger_not_approved"
                 context.store.record_command(command, record)
                 console.print("Aborted. Command was not run.")
-                return
+                return None
         elif (
             confirm_danger
             and not yes
@@ -96,12 +122,12 @@ def run_command(
             record["status"] = "danger_acknowledged_but_aborted"
             context.store.record_command(command, record)
             console.print("Aborted. Command was not run.")
-            return
+            return None
     elif not yes and not Confirm.ask("Run this command?", default=False):
         record["status"] = "aborted"
         context.store.record_command(command, record)
         console.print("Aborted. Command was not run.")
-        return
+        return None
 
     try:
         result = subprocess.run(
@@ -123,3 +149,4 @@ def run_command(
     context.store.record_command(command, record)
     if result.returncode != 0:
         raise typer.Exit(code=result.returncode)
+    return result.returncode

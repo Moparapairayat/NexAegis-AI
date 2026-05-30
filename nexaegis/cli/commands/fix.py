@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+from dataclasses import asdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
@@ -12,8 +14,10 @@ from rich.table import Table
 from rich.text import Text
 
 from nexaegis.core.config import backups_dir
-from nexaegis.core.context import get_project_context
+from nexaegis.core.context import ProjectContext, get_project_context
 from nexaegis.core.patcher import PatchPlan, SafePatcher
+from nexaegis.core.policies import load_command_rules
+from nexaegis.core.safety import evaluate_command
 from nexaegis.scanners.project import scan_project
 
 console = Console()
@@ -47,6 +51,10 @@ def fix_command(
         bool,
         typer.Option("--apply", help="Apply supported fixes after confirmation and backup."),
     ] = False,
+    validate: Annotated[
+        bool,
+        typer.Option("--validate", help="Run configured validation commands after applying fixes."),
+    ] = False,
 ) -> None:
     """Default fix behavior: preview all supported fixes unless --apply is passed."""
     if ctx.invoked_subcommand is not None:
@@ -54,7 +62,7 @@ def fix_command(
     if dry_run and apply_changes:
         console.print("[red]Choose either --dry-run or --apply, not both.[/red]")
         raise typer.Exit(code=2)
-    _run_fix(issue=issue, fix_id="all", apply_changes=apply_changes)
+    _run_fix(issue=issue, fix_id="all", apply_changes=apply_changes, validate=validate)
 
 
 @fix_app.command("list")
@@ -93,7 +101,7 @@ def preview_fix(
     ] = None,
 ) -> None:
     """Preview one supported fix without modifying files."""
-    _run_fix(issue=issue, fix_id=fix_id, apply_changes=False)
+    _run_fix(issue=issue, fix_id=fix_id, apply_changes=False, validate=False)
 
 
 @fix_app.command("apply")
@@ -103,9 +111,13 @@ def apply_fix(
         str | None,
         typer.Option("--issue", help="Optional issue or error text to guide safe fixes."),
     ] = None,
+    validate: Annotated[
+        bool,
+        typer.Option("--validate", help="Run configured validation commands after applying fixes."),
+    ] = False,
 ) -> None:
     """Apply one supported fix after confirmation and backup."""
-    _run_fix(issue=issue, fix_id=fix_id, apply_changes=True)
+    _run_fix(issue=issue, fix_id=fix_id, apply_changes=True, validate=validate)
 
 
 @fix_app.command("rollback")
@@ -169,7 +181,7 @@ def rollback_fix(
         console.print(f"[yellow]Pre-rollback file backup:[/yellow] {result.current_backup_dir}")
 
 
-def _run_fix(*, issue: str | None, fix_id: str, apply_changes: bool) -> None:
+def _run_fix(*, issue: str | None, fix_id: str, apply_changes: bool, validate: bool) -> None:
     context = get_project_context()
     suggestions = select_fix_suggestions(build_fix_suggestions(context.root, issue), fix_id)
     if not suggestions:
@@ -225,6 +237,14 @@ def _run_fix(*, issue: str | None, fix_id: str, apply_changes: bool) -> None:
         "[green]Patches applied with backups recorded.[/green]\n"
         f"Rollback: {batch.rollback_metadata_path}"
     )
+    if validate or context.config.run_validation_after_fix:
+        passed = _run_validation_commands(context)
+        if not passed:
+            console.print(
+                "[red]Validation failed after patch application.[/red] "
+                f"Use `nax fix rollback {batch.rollback_metadata_path}` if you want to restore."
+            )
+            raise typer.Exit(code=1)
 
 
 def select_fix_suggestions(suggestions: list[FixSuggestion], fix_id: str) -> list[FixSuggestion]:
@@ -305,3 +325,38 @@ def build_fix_suggestions(project_root: Path, issue: str | None = None) -> list[
         )
 
     return suggestions
+
+
+def _run_validation_commands(context: ProjectContext) -> bool:
+    commands = [command.strip() for command in context.config.fix_validation_commands if command]
+    if not commands:
+        console.print("[yellow]No validation commands are configured.[/yellow]")
+        return True
+
+    rules = load_command_rules(context.config, context.root)
+    for command in commands:
+        safety = evaluate_command(command, safe_mode=context.config.safe_mode, rules=rules)
+        record = asdict(safety) | {"status": "validation_pending"}
+        if safety.requires_confirmation or not safety.allowed:
+            record["status"] = "validation_blocked"
+            context.store.record_command(command, record)
+            console.print(
+                f"[red]Validation command blocked by policy:[/red] {command}\n"
+                f"Reason: {safety.reason}"
+            )
+            return False
+
+        console.print(f"[cyan]Validation:[/cyan] {command}")
+        result = subprocess.run(
+            command,
+            cwd=context.root,
+            shell=True,
+            check=False,
+        )
+        record["status"] = "validation_passed" if result.returncode == 0 else "validation_failed"
+        record["returncode"] = result.returncode
+        context.store.record_command(command, record)
+        if result.returncode != 0:
+            return False
+
+    return True

@@ -15,6 +15,7 @@ from nexaegis.cli.commands.report import report_command
 from nexaegis.cli.commands.risk import risk_command
 from nexaegis.cli.commands.run import run_command
 from nexaegis.cli.commands.security import security_command
+from nexaegis.cli.commands.shell import shell_command
 from nexaegis.cli.commands.ui import ui_command
 
 app = typer.Typer(
@@ -52,6 +53,7 @@ app.command("explain")(explain_command)
 app.command("ask")(ask_command)
 app.add_typer(fix_app, name="fix")
 app.command("run")(run_command)
+app.command("shell")(shell_command)
 app.command("commit")(commit_command)
 app.command("ui")(ui_command)
 app.command("report")(report_command)
