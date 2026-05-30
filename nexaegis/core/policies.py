@@ -10,6 +10,10 @@ import yaml
 from nexaegis.core.config import NexAegisConfig
 
 
+class PolicyError(RuntimeError):
+    """Raised when command policy configuration cannot be loaded safely."""
+
+
 @dataclass(frozen=True)
 class CommandRule:
     name: str
@@ -116,6 +120,31 @@ BUILTIN_POLICY_PACKS: dict[str, list[dict[str, object]]] = {
             "action": "confirm",
             "risk_score": 65,
         },
+        {
+            "name": "powershell_recursive_delete",
+            "pattern": (
+                r"\b(remove-item|rm|rmdir|rd|del|erase)\b"
+                r"(?=.*\s-(recurse|r)\b)(?=.*\s-(force|fo)\b)"
+            ),
+            "reason": "Recursive forced deletion can remove large parts of the filesystem.",
+            "safer_alternative": (
+                "Inspect targets first, then delete explicit files without recursive force flags."
+            ),
+            "category": "filesystem",
+            "action": "confirm",
+            "risk_score": 90,
+        },
+        {
+            "name": "cmd_recursive_delete",
+            "pattern": r"\b(rmdir|rd|del|erase)\b(?=.*\s/s\b)(?=.*\s/q\b)",
+            "reason": "Recursive quiet deletion can remove many files without review.",
+            "safer_alternative": (
+                "List the target path first and delete a specific reviewed file or directory."
+            ),
+            "category": "filesystem",
+            "action": "confirm",
+            "risk_score": 85,
+        },
     ],
     "enterprise-strict": [
         {
@@ -143,7 +172,11 @@ BUILTIN_POLICY_PACKS: dict[str, list[dict[str, object]]] = {
 def load_command_rules(config: NexAegisConfig, project_root: Path) -> list[CommandRule]:
     rules: list[CommandRule] = []
     for pack_name in config.policy_packs:
-        for raw_rule in BUILTIN_POLICY_PACKS.get(pack_name, []):
+        raw_rules = BUILTIN_POLICY_PACKS.get(pack_name)
+        if raw_rules is None:
+            known = ", ".join(sorted(BUILTIN_POLICY_PACKS))
+            raise PolicyError(f"Unknown policy pack `{pack_name}`. Known packs: {known}.")
+        for raw_rule in raw_rules:
             rules.append(_build_rule(raw_rule, source=pack_name))
 
     for raw_path in config.custom_policy_paths:
@@ -155,13 +188,20 @@ def load_command_rules(config: NexAegisConfig, project_root: Path) -> list[Comma
 
 
 def load_custom_policy_file(path: Path) -> list[CommandRule]:
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not path.exists():
+        raise PolicyError(f"Policy file not found: {path}")
+
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise PolicyError(f"Could not parse policy file {path}: {exc}") from exc
+
     if not isinstance(raw, dict):
-        raise ValueError(f"Policy file must contain a YAML mapping: {path}")
+        raise PolicyError(f"Policy file must contain a YAML mapping: {path}")
 
     rules = raw.get("command_rules", [])
     if not isinstance(rules, list):
-        raise ValueError(f"`command_rules` must be a list: {path}")
+        raise PolicyError(f"`command_rules` must be a list: {path}")
 
     return [_build_rule(rule, source=str(path)) for rule in rules if isinstance(rule, dict)]
 
@@ -172,24 +212,36 @@ def _build_rule(raw_rule: dict[str, Any], *, source: str) -> CommandRule:
     reason = _required_string(raw_rule, "reason", source)
     action = str(raw_rule.get("action", "confirm")).lower()
     if action not in {"allow", "confirm", "block"}:
-        raise ValueError(f"Unsupported policy action `{action}` in {source}:{name}")
+        raise PolicyError(f"Unsupported policy action `{action}` in {source}:{name}")
+    try:
+        compiled = re.compile(pattern, re.IGNORECASE)
+    except re.error as exc:
+        raise PolicyError(f"Invalid regex in policy rule {source}:{name}: {exc}") from exc
     return CommandRule(
         name=name,
-        pattern=re.compile(pattern, re.IGNORECASE),
+        pattern=compiled,
         reason=reason,
         safer_alternative=_optional_string(raw_rule.get("safer_alternative")),
         category=str(raw_rule.get("category", "general")),
         action=action,
-        risk_score=int(raw_rule.get("risk_score", 50)),
+        risk_score=_risk_score(raw_rule.get("risk_score", 50), source=source, name=name),
     )
 
 
 def _required_string(raw_rule: dict[str, Any], key: str, source: str) -> str:
     value = raw_rule.get(key)
     if not isinstance(value, str) or not value:
-        raise ValueError(f"Policy rule in {source} is missing required string `{key}`.")
+        raise PolicyError(f"Policy rule in {source} is missing required string `{key}`.")
     return value
 
 
 def _optional_string(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def _risk_score(value: object, *, source: str, name: str) -> int:
+    try:
+        score = int(value)
+    except (TypeError, ValueError) as exc:
+        raise PolicyError(f"Invalid risk_score in policy rule {source}:{name}") from exc
+    return max(0, min(100, score))
