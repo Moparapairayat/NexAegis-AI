@@ -15,7 +15,7 @@ console = Console()
 def report_command(
     report_format: Annotated[
         str,
-        typer.Option("--format", "-f", help="Report format: markdown or json."),
+        typer.Option("--format", "-f", help="Report format: markdown, json, or sarif."),
     ] = "markdown",
     output: Annotated[
         Path | None,

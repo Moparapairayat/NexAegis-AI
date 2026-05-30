@@ -17,20 +17,23 @@ TABLE_MAP = {
     "security": "security_runs",
     "commands": "command_history",
     "fixes": "fix_history",
+    "events": "event_log",
 }
 
 
 def history_command(
     kind: Annotated[
         str,
-        typer.Argument(help="History kind: doctor, risk, security, commands, fixes."),
+        typer.Argument(help="History kind: doctor, risk, security, commands, fixes, events."),
     ] = "risk",
     limit: Annotated[int, typer.Option("--limit", "-n", help="Number of rows to show.")] = 10,
 ) -> None:
     """Show recent local NexAegis memory entries."""
     table_name = TABLE_MAP.get(kind)
     if table_name is None:
-        console.print("[red]History kind must be: doctor, risk, security, commands, fixes[/red]")
+        console.print(
+            "[red]History kind must be: doctor, risk, security, commands, fixes, events[/red]"
+        )
         raise typer.Exit(code=2)
 
     context = get_project_context()
@@ -57,4 +60,6 @@ def _summary(row: dict[str, object]) -> str:
         return f"{row['command']} [{status or 'recorded'}]"
     if "action" in row:
         return f"{row['action']} backup={row.get('backup_path') or 'n/a'}"
+    if "event_type" in row:
+        return f"{row['event_type']}: {row.get('summary') or 'recorded'}"
     return "recorded"

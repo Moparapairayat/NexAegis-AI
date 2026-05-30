@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -34,6 +35,55 @@ def build_project_report(project_root: Path, config: NexAegisConfig) -> ProjectR
 
 def report_to_json(report: ProjectReport) -> str:
     return json.dumps(report.to_dict(), indent=2)
+
+
+def report_to_sarif(report: ProjectReport) -> str:
+    findings = report.security.findings
+    rule_titles = sorted({finding.title for finding in findings})
+    rule_ids = {title: _sarif_rule_id(title) for title in rule_titles}
+    rules = [
+        {
+            "id": rule_ids[title],
+            "name": title,
+            "shortDescription": {"text": title},
+            "helpUri": "https://github.com/nexaegis/nexaegis-ai",
+        }
+        for title in rule_titles
+    ]
+    results = []
+    for finding in findings:
+        result: dict[str, object] = {
+            "ruleId": rule_ids[finding.title],
+            "level": _sarif_level(finding.severity),
+            "message": {"text": finding.detail or finding.title},
+        }
+        if finding.path:
+            result["locations"] = [
+                {
+                    "physicalLocation": {
+                        "artifactLocation": {"uri": finding.path},
+                    }
+                }
+            ]
+        results.append(result)
+
+    payload = {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "NexAegis AI",
+                        "informationUri": "https://github.com/nexaegis/nexaegis-ai",
+                        "rules": rules,
+                    }
+                },
+                "results": results,
+            }
+        ],
+    }
+    return json.dumps(payload, indent=2)
 
 
 def report_to_markdown(report: ProjectReport) -> str:
@@ -85,6 +135,22 @@ def render_report(report: ProjectReport, report_format: str) -> str:
     normalized = report_format.lower()
     if normalized == "json":
         return report_to_json(report)
+    if normalized == "sarif":
+        return report_to_sarif(report)
     if normalized in {"md", "markdown"}:
         return report_to_markdown(report)
     raise ValueError(f"Unsupported report format: {report_format}")
+
+
+def _sarif_rule_id(title: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+    return f"nexaegis.{normalized or 'finding'}"
+
+
+def _sarif_level(severity: str) -> str:
+    normalized = severity.lower()
+    if normalized == "high":
+        return "error"
+    if normalized == "medium":
+        return "warning"
+    return "note"

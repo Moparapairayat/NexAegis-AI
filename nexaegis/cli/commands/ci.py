@@ -30,7 +30,7 @@ def ci_command(
     ] = None,
     report_format: Annotated[
         str,
-        typer.Option("--format", help="Optional report format: markdown or json."),
+        typer.Option("--format", help="Optional report format: markdown, json, or sarif."),
     ] = "markdown",
     output: Annotated[
         Path | None,
