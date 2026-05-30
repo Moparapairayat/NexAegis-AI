@@ -46,7 +46,16 @@ def commit_command() -> None:
         console.print("Aborted. No commit was created.")
         return
 
-    subprocess.run(["git", "-C", str(context.root), "add", "--", *files], check=False)
+    add_result = subprocess.run(
+        ["git", "-C", str(context.root), "add", "--", *files],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if add_result.returncode != 0:
+        console.print(f"[red]git add failed:[/red]\n{add_result.stderr}")
+        raise typer.Exit(code=add_result.returncode)
+
     result = subprocess.run(
         ["git", "-C", str(context.root), "commit", "-m", message],
         text=True,

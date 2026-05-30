@@ -43,3 +43,14 @@ def test_security_scan_detects_iac_risks(tmp_path: Path) -> None:
     assert "Docker image uses the latest tag" in titles
     assert "Terraform enables public accessibility" in titles
     assert "Kubernetes workload enables privileged mode" in titles
+
+
+def test_security_scan_ignores_local_state_directories(tmp_path: Path) -> None:
+    (tmp_path / ".gitignore").write_text(".env\n", encoding="utf-8")
+    ignored = tmp_path / ".nexaegis" / "backups"
+    ignored.mkdir(parents=True)
+    (ignored / "secret-token.key").write_text("not printed\n", encoding="utf-8")
+
+    result = scan_security(tmp_path)
+
+    assert not any(finding.path == ".nexaegis/backups/secret-token.key" for finding in result.findings)

@@ -203,7 +203,12 @@ def load_custom_policy_file(path: Path) -> list[CommandRule]:
     if not isinstance(rules, list):
         raise PolicyError(f"`command_rules` must be a list: {path}")
 
-    return [_build_rule(rule, source=str(path)) for rule in rules if isinstance(rule, dict)]
+    built_rules: list[CommandRule] = []
+    for index, rule in enumerate(rules, start=1):
+        if not isinstance(rule, dict):
+            raise PolicyError(f"Policy rule #{index} in {path} must be a mapping.")
+        built_rules.append(_build_rule(rule, source=str(path)))
+    return built_rules
 
 
 def _build_rule(raw_rule: dict[str, Any], *, source: str) -> CommandRule:

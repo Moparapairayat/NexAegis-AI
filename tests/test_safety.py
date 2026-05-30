@@ -68,6 +68,14 @@ def test_custom_policy_can_block_command(tmp_path) -> None:
     assert result.category == "secrets"
 
 
+def test_custom_policy_rejects_non_mapping_rules(tmp_path) -> None:
+    policy = tmp_path / "policy.yaml"
+    policy.write_text("command_rules:\n  - just-a-string\n", encoding="utf-8")
+
+    with pytest.raises(PolicyError, match="must be a mapping"):
+        load_custom_policy_file(policy)
+
+
 def test_unknown_policy_pack_fails_closed(tmp_path) -> None:
     config = default_config(tmp_path)
     config.policy_packs = ["missing-pack"]
