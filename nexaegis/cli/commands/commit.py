@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 
+import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm
@@ -19,7 +20,7 @@ def commit_command() -> None:
     context = get_project_context()
     if not is_git_repo(context.root):
         console.print("[red]This project is not a Git repository.[/red]")
-        raise SystemExit(1)
+        raise typer.Exit(code=1)
 
     files = changed_files(context.root)
     if not files:
@@ -45,7 +46,7 @@ def commit_command() -> None:
         console.print("Aborted. No commit was created.")
         return
 
-    subprocess.run(["git", "-C", str(context.root), "add", *files], check=False)
+    subprocess.run(["git", "-C", str(context.root), "add", "--", *files], check=False)
     result = subprocess.run(
         ["git", "-C", str(context.root), "commit", "-m", message],
         text=True,

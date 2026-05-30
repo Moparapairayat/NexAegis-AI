@@ -82,7 +82,12 @@ def ci_command(
     if output:
         target = output if output.is_absolute() else context.root / output
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(render_report(report, report_format), encoding="utf-8")
+        try:
+            rendered_report = render_report(report, report_format)
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=2) from exc
+        target.write_text(rendered_report, encoding="utf-8")
         console.print(f"[green]CI report written:[/green] {target}")
 
     if not all(passed for _, passed, _ in checks):
