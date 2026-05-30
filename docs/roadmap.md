@@ -13,19 +13,23 @@
 - JSON/Markdown reporting and CI gates.
 - Commit message suggestions.
 - Textual dashboard with tabs.
+- Unified SQLite event log.
+- Policy-backed command firewall.
+- Interactive safety shell.
+- SARIF export.
+- Post-fix validation hooks.
 
 ## Near Term
 
 - More fix classes with validation hooks.
 - Better Python and Node dependency analysis.
-- SARIF export for CI.
 - Configurable ignored paths.
 - More Textual workflows.
 
 ## Later
 
 - Local embedding memory.
-- Policy packs for teams.
+- Richer policy packs for teams.
 - Plugin system for custom scanners.
 - IDE integrations.
 - CI bot mode with strict non-mutating defaults.
